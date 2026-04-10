@@ -1,4 +1,4 @@
-# VLM Video ShortSage (Hackathon MVP)
+# Summarize
 
 End-to-end full stack project that turns long educational videos into:
 - 10-min summary,
