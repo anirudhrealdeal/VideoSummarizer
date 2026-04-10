@@ -1,0 +1,10 @@
+fastapi>=0.100.0
+uvicorn>=0.20.0
+pydantic>=2.0.0
+python-multipart
+yt-dlp
+openai>=1.0.0
+aiofiles
+python-dotenv
+requests
+gtts
