@@ -10,3 +10,4 @@ dist/
 # generated assets
 /tmp/vlm_summ/**
 backend/.env
+ara_app/.env

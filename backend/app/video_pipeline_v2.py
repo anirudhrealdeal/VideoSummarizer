@@ -34,9 +34,6 @@ def download_youtube(youtube_url: str, out_dir: str) -> str:
     out_template = os.path.join(out_dir, "video.%(ext)s")
     cmd = [
         "yt-dlp",
-        "--js-runtimes", "node",
-        "--remote-components", "ejs:github",
-        "--cookies-from-browser", "chrome",
         "--no-playlist",
         "-f", "bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best",
         "-o", out_template,
@@ -74,16 +71,23 @@ def video_duration(video_path: str) -> float:
     return float(out.strip())
 
 
+def _transcribe_chunk(chunk_path: str) -> str:
+    client = _get_client()
+    with open(chunk_path, "rb") as f:
+        result = client.audio.transcriptions.create(file=f, model="whisper-1")
+    return result.text
+
+
 def speech_to_text(audio_path: str) -> str:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     out_dir = os.path.dirname(audio_path)
     chunk_paths = split_audio(audio_path, out_dir)
-    full_transcript = ""
-    for chunk_path in chunk_paths:
-        client = _get_client()
-        with open(chunk_path, "rb") as f:
-            result = client.audio.transcriptions.create(file=f, model="whisper-1")
-        full_transcript += result.text + " "
-    return full_transcript.strip()
+    results = [None] * len(chunk_paths)
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(_transcribe_chunk, p): i for i, p in enumerate(chunk_paths)}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+    return " ".join(r for r in results if r).strip()
 
 
 def chunk_transcript_by_time(transcript: str, chunk_words: int = 500) -> List[Dict]:
@@ -160,37 +164,41 @@ def extract_detailed_summary(transcript: str) -> str:
     return resp.choices[0].message.content.strip()
 
 
-def _extract_technical_content(transcript: str, chunk_size: int = 2500) -> str:
-    """
-    Chunk the full transcript and extract verbatim technical content from each chunk.
-    Returns a concatenated brief of definitions, equations, derivations, and examples
-    covering the entire lecture.
-    """
+def _extract_technical_chunk(chunk: str, idx: int) -> str:
     client = _get_client()
+    prompt = (
+        "Extract ALL technical content from this lecture segment with full fidelity. "
+        "Your output will be used as the source for a spoken narration a student studies from. "
+        "Include every: definition (formal + intuitive), theorem, equation, derivation step, "
+        "algorithm, worked numerical example, proof sketch, condition, and edge case. "
+        "Write equations in plain spoken English: e.g. 'the gradient of the loss with respect to w "
+        "equals one over n times X transpose times the vector of residuals'. "
+        "Reproduce every step of every derivation — never skip intermediate steps. "
+        "Reproduce every numerical example in full. "
+        "Skip only filler words, repeated questions, and off-topic tangents. "
+        "Output as plain prose, one paragraph per topic, preserving the lecture's logical order.\n\n"
+        f"Segment {idx + 1}:\n{chunk}"
+    )
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=2000,
+    )
+    return resp.choices[0].message.content.strip()
+
+
+def _extract_technical_content(transcript: str, chunk_size: int = 2500) -> str:
+    """Parallel extraction of verbatim technical content across the full transcript."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     words = transcript.split()
     chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
-    parts = []
-    for idx, chunk in enumerate(chunks):
-        prompt = (
-            "Extract ALL technical content from this lecture segment with full fidelity. "
-            "Your output will be used as the source for a spoken narration a student studies from. "
-            "Include every: definition (formal + intuitive), theorem, equation, derivation step, "
-            "algorithm, worked numerical example, proof sketch, condition, and edge case. "
-            "Write equations in plain spoken English: e.g. 'the gradient of the loss with respect to w "
-            "equals one over n times X transpose times the vector of residuals'. "
-            "Reproduce every step of every derivation — never skip intermediate steps. "
-            "Reproduce every numerical example in full. "
-            "Skip only filler words, repeated questions, and off-topic tangents. "
-            "Output as plain prose, one paragraph per topic, preserving the lecture's logical order.\n\n"
-            f"Segment {idx + 1}:\n{chunk}"
-        )
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
-        )
-        parts.append(resp.choices[0].message.content.strip())
-    return "\n\n".join(parts)
+    results = [None] * len(chunks)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(_extract_technical_chunk, chunk, i): i
+                   for i, chunk in enumerate(chunks)}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+    return "\n\n".join(r for r in results if r)
 
 
 def generate_narration_script(transcript: str, key_points: List[str]) -> str:
@@ -309,25 +317,27 @@ def generate_clip_hooks(transcript: str, duration: float) -> List[Dict]:
                 desc_lines.append(line.strip())
         if desc_lines and "description" not in clip:
             clip["description"] = " ".join(desc_lines)
-        # Only append if all required fields are present
-        if all(k in clip for k in ("title", "timestamp", "description", "overlay", "insight")):
-            clip["timestamp"] = max(0, min(int(clip["timestamp"]), int(duration - 20)))
-            clips.append(clip)
-    
-    # Fallback if parsing failed
-    if not clips:
-        clip_interval = int(duration / 6)
-        clips = [
-            {
-                "title": f"Key Moment {i+1}",
-                "timestamp": i * clip_interval,
-                "description": f"Important segment #{i+1}",
-                "overlay": f"Moment {i+1}",
-                "insight": "Watch this key moment"
-            }
-            for i in range(6)
-        ]
-    
+        # Apply defaults for any missing optional fields so valid partial responses aren't dropped
+        if "title" not in clip:
+            continue
+        clip.setdefault("timestamp", 0)
+        clip.setdefault("description", clip.get("title", ""))
+        clip.setdefault("overlay", " ".join(clip["title"].split()[:4]))
+        clip.setdefault("insight", clip["description"])
+        clip["timestamp"] = max(0, min(int(clip["timestamp"]), int(duration - 20)))
+        clips.append(clip)
+
+    # Fill any missing slots with evenly-spaced fallback clips
+    clip_interval = max(1, int(duration / 6))
+    for i in range(len(clips), 6):
+        clips.append({
+            "title": f"Key Moment {i+1}",
+            "timestamp": min(i * clip_interval, int(duration - 20)),
+            "description": f"Important segment #{i+1}",
+            "overlay": f"Moment {i+1}",
+            "insight": "Watch this key moment"
+        })
+
     return clips[:6]
 
 
@@ -342,7 +352,7 @@ def generate_clips(video_path: str, working_dir: str, clip_hooks: List[Dict], cl
         safe_title = re.sub(r'[^a-zA-Z0-9 ]', '', hook['title']).strip().replace(' ', '_')[:20]
         outfile = os.path.join(working_dir, f"clip_{idx+1:02d}_{safe_title}.mp4")
         try:
-            _run_cmd(["ffmpeg", "-y", "-ss", str(start), "-i", video_path, "-t", str(clip_duration), "-c", "copy", outfile])
+            _run_cmd(["ffmpeg", "-y", "-ss", str(start), "-i", video_path, "-t", str(clip_duration), "-c:v", "libx264", "-c:a", "aac", "-preset", "ultrafast", outfile])
             clips.append({
                 "clip_index": idx + 1,
                 "title": hook["title"],
@@ -812,26 +822,23 @@ def _slides_from_chunk(chunk: str, chunk_index: int, total_chunks: int) -> List[
 
 
 def _generate_slide_content(transcript: str, exec_summary: str, key_points: List[str]) -> List[Dict]:
-    """Chunk the full transcript and generate slides per chunk — covers a full 2-hour lecture."""
-    # Split transcript into ~2500-word chunks (roughly 15-20 min of lecture each)
+    """Chunk the full transcript and generate slides per chunk — parallel GPT calls."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     words = transcript.split()
     chunk_size = 2500
-    chunks = [
-        " ".join(words[i:i + chunk_size])
-        for i in range(0, len(words), chunk_size)
-    ]
-    # Cap at 8 chunks to keep cost bounded (~8 GPT calls)
+    chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
     chunks = chunks[:8]
 
-    all_slides = []
-    for i, chunk in enumerate(chunks):
-        slides = _slides_from_chunk(chunk, i, len(chunks))
-        all_slides.extend(slides)
+    results = [None] * len(chunks)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(_slides_from_chunk, chunk, i, len(chunks)): i
+                   for i, chunk in enumerate(chunks)}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
 
-    # Fallback if everything failed
+    all_slides = [slide for r in results if r for slide in r]
     if not all_slides:
         all_slides = [{"title": p[:80], "concept": p, "detail": "", "takeaway": ""} for p in key_points]
-
     return all_slides
 
 
@@ -1195,56 +1202,50 @@ def process(video_path: str, working_dir: str, voice_style: str = "friendly") ->
     transcript = speech_to_text(audio_path)
     
     duration = video_duration(video_path)
-    
-    # Generate all summaries & metadata in parallel (logically)
-    print("Generating executive summary...")
-    exec_summary = extract_executive_summary(transcript)
-    
-    print("Extracting key points...")
-    key_points = extract_key_points(transcript)
-    
-    print("Generating clip hooks...")
-    clip_hooks = generate_clip_hooks(transcript, duration)
-    
-    print("Generating clips...")
-    clips = generate_clips(video_path, working_dir, clip_hooks, clip_duration=20)
 
-    print("Extracting keyframes for summary video...")
-    frame_paths = extract_keyframes(video_path, working_dir, interval_secs=15.0, max_frames=60)
+    # Stage 1: Run all independent analysis calls + keyframe extraction in parallel
+    print("Running parallel analysis (summary, key points, clip hooks, keyframes)...")
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        f_exec    = executor.submit(extract_executive_summary, transcript)
+        f_kp      = executor.submit(extract_key_points, transcript)
+        f_hooks   = executor.submit(generate_clip_hooks, transcript, duration)
+        f_frames  = executor.submit(extract_keyframes, video_path, working_dir, 15.0, 60)
+        exec_summary = f_exec.result()
+        key_points   = f_kp.result()
+        clip_hooks   = f_hooks.result()
+        frame_paths  = f_frames.result()
 
-    print("Generating SEO metadata...")
-    seo = generate_seo_metadata(transcript, key_points)
+    # Stage 2: clip generation + SEO + slide content all run in parallel
+    print("Running parallel generation (clips, SEO, slides)...")
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        f_clips = executor.submit(generate_clips, video_path, working_dir, clip_hooks, 20)
+        f_seo   = executor.submit(generate_seo_metadata, transcript, key_points)
+        f_slides = executor.submit(_generate_slide_content, transcript, exec_summary, key_points)
+        clips      = f_clips.result()
+        seo        = f_seo.result()
+        slide_data = f_slides.result()
 
-    # Generate slide content first — used as technical brief for narration
-    print("Generating slide content...")
-    slide_data = _generate_slide_content(transcript, exec_summary, key_points)
-
-    # Generate a speech-optimized narration script using slide_data as full technical reference
+    # Stage 3: narration (depends on slide_data)
     print("Generating narration script...")
     narration_script = generate_narration_script(transcript, key_points)
 
     print("Generating narration audio...")
     narration_audio = generate_narration_audio(narration_script, working_dir, voice_style=voice_style)
 
-    print("Creating summary video with Ken Burns keyframe visuals...")
-    summary_video_path = create_summary_video(
-        narration_audio, working_dir,
-        key_points=key_points,
-        frame_paths=frame_paths,
-        narration_text=narration_script,
-    )
-
-    print("Generating slide presentation (pptx)...")
-    slides_path = generate_slide_presentation(
-        working_dir, key_points, exec_summary, frame_paths, clip_hooks, seo,
-        slide_data=slide_data,
-    )
-
-    print("Generating slide PDF...")
-    pdf_path = generate_pdf_slides(slide_data, working_dir, seo, exec_summary)
-
-    print("Saving transcript...")
-    transcript_txt_path = save_transcript(transcript, working_dir)
+    # Stage 4: summary video + slides/pdf/transcript all run in parallel
+    print("Running parallel finalization (video, slides, PDF, transcript)...")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        f_video = executor.submit(create_summary_video, narration_audio, working_dir,
+                                  key_points, frame_paths, narration_script)
+        f_pptx  = executor.submit(generate_slide_presentation, working_dir, key_points,
+                                  exec_summary, frame_paths, clip_hooks, seo, slide_data)
+        f_pdf   = executor.submit(generate_pdf_slides, slide_data, working_dir, seo, exec_summary)
+        f_txt   = executor.submit(save_transcript, transcript, working_dir)
+        summary_video_path   = f_video.result()
+        slides_path          = f_pptx.result()
+        pdf_path             = f_pdf.result()
+        transcript_txt_path  = f_txt.result()
 
     print("Generating storyboard JSON...")
     storyboard_path = generate_storyboard(working_dir, duration, key_points, clip_hooks, voice_style=voice_style)

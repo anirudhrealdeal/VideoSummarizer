@@ -1,0 +1,384 @@
+Quickstart
+
+Copy page
+Launch Ara fast: account, model key, session spawn, channels, and your first autonomous workflow.
+
+Use this flow to go from zero to production-style agent behavior quickly.
+​
+1) Create your account
+Sign in on ara.so, then open the console. Ara can be used from web and desktop.
+​
+2) Add a model provider key
+Ara supports BYOK for major providers:
+Provider	Console
+Anthropic (Claude)	console.anthropic.com
+OpenAI (GPT)	platform.openai.com
+Google (Gemini)	aistudio.google.com
+OpenRouter	openrouter.ai
+Keys are encrypted at rest and injected into your active runtime session only when needed.
+​
+3) Spawn your cloud session
+Ara creates an isolated sandbox (cloud_session) for your user:
+Session is started through the cloud API (/session/start)
+Runtime boots agent workers + channel bridges
+Filesystem mounts under /root/.ara/workspace
+Realtime routes become available for chat and terminal
+​
+4) Connect one communication channel
+Pick a channel and validate end-to-end flow:
+WhatsApp: QR pairing
+Telegram: bot token
+Email: IMAP/SMTP credentials
+iMessage:
+Mac desktop bridge for local iMessage
+Linq bridge for always-on iMessage/RCS/SMS
+​
+5) Run your first autonomous workflow
+Try a prompt that forces planning + tool use:
+“Create a skill that summarizes my unread email every morning, checks my calendar, and sends me a concise message.”
+This exercises:
+Skill creation and persistence
+Message handling
+Filesystem writes
+Multi-tool execution
+​
+6) Verify memory and recursion
+Follow up with:
+“What did you learn from earlier tasks, and how would you improve this skill next run?”
+You should see the agent use persisted memory and refine behavior.
+
+Features Overview
+
+Copy page
+Complete product map: app.ara.so experience, cloud runtime, sandboxing, skills, recursion, channels, and APIs.
+
+Ara is a full stack product, not only a chat interface.
+Ara product visual section art
+Editorial view: product surfaces, runtime boundaries, and deployment shape at a glance.
+​
+Product surfaces
+Surface	What it does
+app.ara.so	Main user experience (desktop-like apps, chats, file tooling, controls).
+api.ara.so	Authenticated cloud API for session lifecycle, files, skills, credentials, usage, and realtime proxying.
+Sandbox runtime	Per-user isolated environment where the agent runtime, channel bridges, and tool execution run.
+ara.so	Marketing + public docs surface.
+​
+What makes Ara different
+Private runtime per user with persistent workspace.
+Skills-first behavior with auto-create and reuse loops.
+Cross-channel assistant continuity.
+Message and file co-presence for real work.
+Browser-native autonomous execution.
+​
+Capability map
+Sandboxing
+Isolated runtime with persistent storage.
+Skills
+Discover, install, and auto-create patterns.
+Learning loop
+Memory + refinement loop.
+Messages + files
+Unified data path.
+Browser agents
+Browsing, automation, and extraction.
+Multi-agent teams
+Delegation for parallel specialist work.
+​
+Communication channels
+Ara supports channel workers and bridges for:
+WhatsApp
+Telegram
+Signal
+Email
+iMessage (desktop bridge) and Linq (iMessage/RCS/SMS cloud path)
+​
+Integration model
+Ara uses MCP to connect external tools. Integrations can be injected per session and surfaced to the runtime either directly or via discovery/unlock strategies.
+
+Integrations
+
+Copy page
+MCP integrations in Ara: server injection, discovery modes, scoped tool exposure, and runtime usage.
+
+Ara uses MCP as the standard boundary between model reasoning and external systems.
+​
+Integration architecture
+User authorizes an external provider
+Cloud API resolves active connections
+Session config is injected with MCP server entries
+Runtime exposes tools (directly or through discovery mode)
+Agent invokes tools in normal tool loop
+​
+Runtime exposure strategies
+Mode	Behavior
+Direct exposure	Tools are loaded and callable immediately.
+Discovery-gated	Tools remain hidden until search/unlock is used.
+Discovery mode is useful when many MCP servers would otherwise overload context windows.
+​
+Common integration domains
+Gmail and Google Calendar
+Slack
+Developer systems (GitHub, Linear, Notion)
+Additional MCP-compatible services
+​
+Security and scope
+Integrations are tied to authenticated user sessions
+Tool availability can be allowlisted per integration
+Revoking integration access removes runtime availability on next injection/update
+​
+Operational pattern
+When integrations change, Ara updates runtime config and restarts the gateway only when required. This keeps tool state synchronized without forcing full session recreation.
+
+
+Skills
+
+Copy page
+How Ara skills work: lookup, install, authoring, auto-creation, storage, and runtime precedence.
+
+Skills are reusable behavior modules (SKILL.md) that let agents execute complex workflows consistently.
+​
+Why skills matter
+Convert repeated prompts into stable operating procedures
+Keep behavior portable across sessions and channels
+Enable autonomous agents to self-document successful workflows
+​
+Skill storage and precedence
+Runtime resolves skills by layered priority:
+Workspace skills
+Agent-created self skills
+User-global skills
+Builtin skills
+Agent-created skills are stored in:
+/root/.ara/workspace/self-skills/<skill-name>/SKILL.md
+​
+Skill lifecycle
+1
+Discover
+
+Agent searches registries (for example ClawHub) or local skill paths.
+2
+Install or create
+
+Skill is installed or authored through skill tools and written as SKILL.md.
+3
+Load into context
+
+Runtime includes skill summaries and reads full files when needed.
+4
+Execute and refine
+
+Agent executes with real tasks, then can update skill content for better future performance.
+​
+Auto-create skills pattern
+A strong pattern for autonomy is:
+Agent completes a multi-step task manually
+Agent saves the successful pattern as a new skill
+Future tasks call that skill directly
+Agent revises the skill when edge cases appear
+This is the bridge from one-off execution to reusable intelligence.
+​
+Good skill design
+Keep scope narrow and explicit
+Include inputs, outputs, and constraints
+Add failure handling and fallback paths
+Prefer composable skill chains over giant monolithic skills
+​
+Related
+
+
+Multi-Agent Teams
+
+Copy page
+Spawn delegated agents, coordinate specialist workflows, and execute parallel tasks safely.
+
+Ara supports delegated execution through spawn/subagent patterns.
+​
+Why multi-agent
+Use multiple agents when work benefits from specialization or parallelization:
+Research + implementation in parallel
+Backend/frontend separation
+Browser QA running while code changes are prepared
+Independent review before shipping
+​
+Team topology pattern
+A practical team pattern:
+Coordinator agent: plans, decomposes work, merges results
+Specialist agents: each handles a bounded domain
+Verifier agent: checks output quality and constraints
+​
+Delegation loop
+1
+Decompose goal
+
+Break objective into parallelizable, low-coupling tasks.
+2
+Assign specialists
+
+Spawn agents with narrow instructions and clear outputs.
+3
+Collect artifacts
+
+Merge file changes, observations, and unresolved questions.
+4
+Reconcile and decide
+
+Coordinator resolves conflicts and selects final path.
+​
+Guardrails
+Keep each agent’s scope explicit
+Use file/path boundaries for ownership
+Require structured outputs (findings, patches, risks)
+Add a final verification gate before deployment
+​
+Skills + teams
+Team performance improves when specialists use curated skills:
+Repeatable prompts become reusable assets
+Onboarding new tasks is faster
+Recursive quality gains compound over time
+
+
+SDK Overview
+
+Copy page
+Public ara-sdk primitives for defining apps, agents, tools, and schedules.
+
+This section documents the public Python package in ara-python-sdk, not internal app-runtime implementation code.
+​
+Core model
+The public SDK is intentionally agent-first:
+Define with App(project_name), @app.agent, @app.tool, @app.schedule, @fastapi_endpoint, and runtime helpers (runtime, sandbox, Secret)
+Schedule with @app.schedule(...) (or schedule.cron/every(...)) and target builders invoke.agent(...) / invoke.tool(...)
+Operate with AraClient (deploy, run, run_async, events, setup) or standalone ara <command> app.py
+​
+Basic primitives
+Think of the SDK as one composition model with a few core building blocks:
+App(...): app identity + defaults (interfaces, runtime_profile) where project_name is DNS-safe ([a-z0-9-])
+@app.agent(...): runnable unit; agent id defaults to function name, and function returns the runtime prompt string
+@app.schedule(...): attach static schedules directly to an agent/tool declaration (cron, at)
+@fastapi_endpoint(...): expose an agent behind a manifest-driven HTTP endpoint (none, header, bearer, hmac)
+@app.tool(...): model-facing function schema + deterministic Python source executed by runtime; id defaults to function name and description uses the function docstring
+schedule + invoke: one schedule shape for static definitions and dynamic creation payloads
+scheduler.create(...): builds automation_create payloads from the same schedule spec
+ara CLI / AraClient: deploy and invoke app agents
+There is no separate public @app.task, @app.subagent, or @app.hook primitive.
+​
+Recommended pattern
+from ara_sdk import App, fastapi_endpoint
+
+app = App("ops-assistant")
+
+@app.tool()
+def send_email(to: str, subject: str, body: str) -> dict:
+    """Send one email."""
+    return {"ok": True, "to": to}
+
+@app.schedule(cron="0 9 * * *", at=["14:30", "2026-04-11T16:45:00Z"])
+@app.agent(
+    entrypoint=True,
+    skills=["send_email", "automation_create", "automation_list", "automation_delete"],
+)
+def ops_agent(input: dict) -> str:
+    """Handle ops requests and automations."""
+    message = str(input.get("message") or "")
+    return f"Handle this request and use tools when needed: {message}"
+
+
+@app.schedule(cron="0 * * * *")
+@app.tool()
+def cleanup_cache(path: str = "/tmp/cache") -> dict:
+    return {"ok": True, "path": path}
+
+
+@app.agent()
+@fastapi_endpoint(method="POST", path="/ops/webhook", auth="hmac")
+def ops_webhook(input: dict) -> str:
+    body = input.get("input") if isinstance(input, dict) else {}
+    return f"Validate webhook and process payload: {body}"
+​
+FAQ
+​
+Runtime auth model
+Control plane calls (/apps/*) use:
+ARA_API_KEY
+legacy ARA_ACCESS_TOKEN
+credentials from ara auth login (~/.ara/credentials.json)
+Runtime invoke calls (/v1/apps/{app_id}/run, /v1/apps/{app_id}/events) use runtime key and/or app header key auth
+FastAPI endpoint calls (/v1/apps/{app_id}/endpoints/{endpoint_label}) use per-endpoint auth (none|header|bearer|hmac)
+deploy mints and returns a runtime_key; export it as ARA_RUNTIME_KEY (or pass --runtime-key)
+setup-auth mints and returns an app_header_key; export it as ARA_APP_HEADER_KEY (or pass --app-header-key)
+ara start, ara status, and ara stop are global aliases for ara runtime session start|status|stop
+ara auth logout clears stored CLI auth credentials
+Local secret declarations are synced on deploy via /apps/{app_id}/secrets
+Connector inheritance for app-runtime turns is isolated by default (interfaces.inherit_owner_tools=false)
+​
+
+
+xamples
+
+Copy page
+Single index for all Ara SDK examples, with source links to the maintained examples repository.
+
+All maintained code examples live in:
+https://github.com/Aradotso/ara-python-sdk/tree/main/examples/
+Use that directory as the source of truth for runnable code and README instructions.
+​
+What this page covers
+This page consolidates the example guidance that used to be split across multiple docs pages.
+​
+Public SDK example flow
+Build app manifests with App(...)
+Declare behavior with @app.agent(...) and @app.tool(...)
+Run with standalone CLI commands (ara <command> app.py) for deploy, setup-auth, run, run-async, run-status, events, setup, and invite
+Manage authenticated cloud sessions with ara start, ara status, and ara stop (global aliases)
+Authenticate first with ara auth login (or use ARA_API_KEY for CI/headless)
+​
+Maintained examples (recommended order)
+00-get-started.py
+01-a-agent-skills-loading.py
+01-b-agent-skills-loading.py
+01-c-agent-skills-loading.py
+02-canonical-email-chat-cron.py
+03-async-ngrok-webhook.py
+04-calcom-booking.py
+05-a-framework-adapters-langgraph.py
+05-b-framework-adapters-agno.py
+06-programmatic-secrets-redeploy.py
+07-app-schedule-decorator.py
+07b-app-schedule-decorator.py
+07c-runtime-automation-manager.py
+Use examples/.env.example as the baseline for env keys. For the canonical email demo, set both RESEND_API_KEY and CRON_EMAIL_FROM.
+07-app-schedule-decorator.py is the first-class scheduling example for the new @app.schedule(...) API (agent + tool schedules with at and cron, plus dynamic add/drop via automation tools). 07b-app-schedule-decorator.py shows the runtime-managed “fire-and-forget” pattern where jobs are created via automation_create during execution instead of static schedule decorators in code, using an apply-style helper. 07c-runtime-automation-manager.py demonstrates the runtime automation lifecycle with create/list/delete flows.
+​
+Event-ingress harness pattern
+Browser/UI input -> proxy/server -> POST /v1/apps/{app_id}/events
+Keep runtime keys on server side, never in client bundles
+Include diagnostics around agent_id, event_id, and response payloads
+​
+Canonical chat + cron demo
+Use examples/02-canonical-email-chat-cron.py for the canonical browser + runtime flow
+Demonstrates chat-driven tool calls plus automation_create / automation_list / automation_update / automation_delete
+Includes minimal Vite frontend in examples/frontend/02-canonical-email-chat-cron/ for local validation
+Frontend requires VITE_ARA_APP_ID and VITE_ARA_RUNTIME_KEY from ara setup-auth 02-canonical-email-chat-cron.py
+ara setup 02-canonical-email-chat-cron.py also includes setup.webhook.fastapi_endpoints when endpoint decorators are present
+​
+Async webhook harness pattern
+Use run-async with --response-mode webhook for long-running flows
+Start with ara setup-auth app.py, then export returned app_header_key as ARA_APP_HEADER_KEY
+For local iteration, use the maintained examples/03-async-ngrok-webhook.py sample + companion scripts
+For public endpoint ingress, prefer @fastapi_endpoint(...) and endpoint auth modes (none|header|bearer|hmac) over hardcoded gateway headers
+​
+Optional integration pattern
+Keep core SDK usage provider-agnostic
+Place provider-specific credentials in env vars (CALCOM_API_KEY, etc.)
+Keep integration adapters in example repos, not in core docs/API surface
+​
+Example-specific decorators
+examples/01-c-agent-skills-loading.py defines a local @skill_handler decorator inside the tool function. That decorator is user-land Python, not an ara-sdk primitive. The SDK primitives in that example are @app.tool(...) and @app.agent(...).
+​
+Recommended learning order
+/sdk/overview
+/sdk/quickstart
+/sdk/reference
+Then open the maintained code examples:
+https://github.com/Aradotso/ara-python-sdk/tree/main/examples/
+

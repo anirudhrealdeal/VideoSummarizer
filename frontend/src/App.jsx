@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './styles.css';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 // ─── Logo ────────────────────────────────────────────────────────────────────
 
 function Logo() {
@@ -133,11 +135,15 @@ const STEPS = [
 export default function App() {
   const [youtubeUrl, setYoutubeUrl]   = useState('');
   const [file, setFile]               = useState(null);
+  const [subject, setSubject]         = useState('');
   const [loading, setLoading]         = useState(false);
   const [activeStep, setActiveStep]   = useState(-1);
   const [doneSteps, setDoneSteps]     = useState([]);
   const [error, setError]             = useState('');
   const [result, setResult]           = useState(null);
+  const [scheduleEmail, setScheduleEmail] = useState('');
+  const [scheduling, setScheduling]   = useState(false);
+  const [scheduleStatus, setScheduleStatus] = useState('');
   const btnRef = useRef(null);
 
   // Simulate pipeline step progression while waiting
@@ -167,6 +173,33 @@ export default function App() {
     setTimeout(() => span.remove(), 600);
   };
 
+  const scheduleAndOrganize = async () => {
+    if (!scheduleEmail || !result) return;
+    setScheduling(true);
+    setScheduleStatus('');
+    try {
+      await axios.post(`${API}/api/organize`, {
+        subject: subject || result.seo_metadata?.title || 'Lecture',
+        topic: result.seo_metadata?.title || 'Lecture',
+        email: scheduleEmail,
+        summary: result.summaries?.executive,
+        key_points: result.summaries?.key_points,
+        files: {
+          pdf: result.pdf_url,
+          slides: result.slides_url,
+          transcript: result.transcript_txt_url,
+          summary_video: result.summary_video_url,
+        },
+        run_id: result.run_id,
+      });
+      setScheduleStatus('done');
+    } catch (err) {
+      setScheduleStatus('error');
+    } finally {
+      setScheduling(false);
+    }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     if (!youtubeUrl && !file) return;
@@ -178,9 +211,10 @@ export default function App() {
     if (youtubeUrl) formData.append('youtube_url', youtubeUrl);
     if (file) formData.append('file', file);
     formData.append('voice_style', 'friendly');
+    if (subject) formData.append('subject', subject);
 
     try {
-      const response = await axios.post('http://localhost:8000/api/process', formData, {
+      const response = await axios.post(`${API}/api/process`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 25 * 60 * 1000,
       });
@@ -216,6 +250,18 @@ export default function App() {
 
         <form onSubmit={(e) => { addRipple(e.nativeEvent); submit(e); }} style={{ width: '100%', maxWidth: 600 }}>
           <div className="input-card">
+            <div className="url-input-wrap" style={{ marginBottom: 16 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', opacity:0.4, pointerEvents:'none' }}>
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+              </svg>
+              <input
+                className="url-input"
+                value={subject}
+                onChange={e => setSubject(e.target.value)}
+                placeholder="Subject name (e.g. Machine Learning, Physics 101)"
+                disabled={loading}
+              />
+            </div>
             <div className="url-input-wrap">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
@@ -294,42 +340,46 @@ export default function App() {
 
           {/* Key Moments — flashcard + clip side by side */}
           {result.publication_ready?.short_form_content?.length > 0 && (
-            <FadeUp delay={100}>
-              <div className="section-heading">Key Moments — click card to reveal insight</div>
+            <>
+              <FadeUp delay={100}>
+                <div className="section-heading">Key Moments — click card to reveal insight</div>
+              </FadeUp>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {result.publication_ready.short_form_content.map((clip, i) => (
-                  <div key={i} className="moment-row">
-                    <Flashcard
-                      num={i + 1}
-                      title={clip.title}
-                      insight={clip.description}
-                    />
-                    {clip.download_url ? (
-                      <div className="moment-video-wrap">
-                        <video controls preload="none">
-                          <source src={clip.download_url} type="video/mp4" />
-                        </video>
-                        <div className="moment-video-footer">
-                          <span className="clip-overlay-tag">{clip.overlay}</span>
-                          <a href={clip.download_url} download className="clip-download">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                              <polyline points="7 10 12 15 17 10"/>
-                              <line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                            Download
-                          </a>
+                  <FadeUp key={i} delay={i * 80}>
+                    <div className="moment-row">
+                      <Flashcard
+                        num={i + 1}
+                        title={clip.title}
+                        insight={clip.description}
+                      />
+                      {clip.download_url ? (
+                        <div className="moment-video-wrap">
+                          <video controls preload="none">
+                            <source src={clip.download_url} type="video/mp4" />
+                          </video>
+                          <div className="moment-video-footer">
+                            <span className="clip-overlay-tag">{clip.overlay}</span>
+                            <a href={clip.download_url} download className="clip-download">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                              </svg>
+                              Download
+                            </a>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="moment-video-wrap moment-video-placeholder">
-                        <span style={{ color: 'var(--muted)', fontSize: 13 }}>No clip available</span>
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        <div className="moment-video-wrap moment-video-placeholder">
+                          <span style={{ color: 'var(--muted)', fontSize: 13 }}>No clip available</span>
+                        </div>
+                      )}
+                    </div>
+                  </FadeUp>
                 ))}
               </div>
-            </FadeUp>
+            </>
           )}
 
           {/* Summary video */}
@@ -397,6 +447,37 @@ export default function App() {
                 </a>
               )}
             </Accordion>
+          </FadeUp>
+
+          {/* Schedule & Organize */}
+          <FadeUp delay={220}>
+            <div className="section-heading" style={{ marginTop: 48 }}>Schedule & Organize</div>
+            <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <p className="card-body">
+                Ara will organize all files into <code style={{ color: 'var(--accent)', fontSize: 12 }}>~/Desktop/Ara/{subject || 'Subject'}/{result.seo_metadata?.title || 'Lecture'}/</code>,
+                book a study block in your calendar, and send you a summary email with a 7-day review reminder.
+              </p>
+              <div className="url-input-wrap" style={{ marginBottom: 0 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', opacity:0.4, pointerEvents:'none' }}>
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <input
+                  className="url-input"
+                  value={scheduleEmail}
+                  onChange={e => setScheduleEmail(e.target.value)}
+                  placeholder="Your email address"
+                  disabled={scheduling}
+                />
+              </div>
+              <button
+                className="submit-btn"
+                disabled={scheduling || !scheduleEmail || scheduleStatus === 'done'}
+                onClick={scheduleAndOrganize}
+                style={{ marginTop: 4 }}
+              >
+                {scheduling ? 'Organizing…' : scheduleStatus === 'done' ? 'Scheduled!' : scheduleStatus === 'error' ? 'Failed — retry' : 'Schedule & Organize with Ara'}
+              </button>
+            </div>
           </FadeUp>
 
         </div>

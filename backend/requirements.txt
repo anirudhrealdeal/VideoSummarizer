@@ -8,3 +8,8 @@ aiofiles
 python-dotenv
 requests
 gtts
+httpx
+apscheduler
+sqlalchemy
+pillow
+python-pptx
